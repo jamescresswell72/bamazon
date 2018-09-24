@@ -1,97 +1,123 @@
-var mysql = require("mysql");
-var inquirer = require("inquirer");
+const mysql = require("mysql");
+const inquirer = require("inquirer");
 
-var connection = mysql.createConnection({
+const connection = mysql.createConnection({
     host: "localhost",
     port: 3306,
     user: "root",
-    password: "Brucec12!",
+    password: "",
+    // removed password for security
     database: "bamazon"
 });
 
 connection.connect(function (err) {
-    if (err) throw (err);
-    displayDB();
+    if (err) {
+        throw (err);
+    }
+    loadProducts();
 });
 
-function displayDB() {
-    var itemsArr = [];
-
-    connection.query('SELECT * FROM products', function (err, res) {
-        if (err) throw (err)
-
-        var item_id = res[i].item_id
-        var product_name = res[i].product_name
-        var department_name = res[i].department_name
-        var price = res[i].price
-
-        for (var i = 0; i < res.length; i++) {
-            itemsArr.push(item_id.toString());
-            console.log('\nItem ID: ' + item_id + '\nProduct: ' + product_name + '\nDepartment: ' + department_name + '\nPrice: ' + price + '\n-----------------------------------------------')
+const loadProducts = function () {
+    connection.query("SELECT * FROM products", (err, res) => {
+        if (err) {
+            throw (err);
         }
 
-        itemsArr.push([item_id, product_name, department_name, price])
-        // console.log (itemsArr)
+        console.table(res);
+        promptCustomerForItem(res);
     })
-
-
-
-
-    shop(itemsArr);
 }
 
-
-function shop(itemsArr) {
-
+const promptCustomerForItem = inventory => {
     inquirer
         .prompt([
             {
-                name: "item_id",
                 type: "input",
-                message: "Which item ID would you like to purchase?" + "\n-----------------------------------------------",
-                choices: itemsArr,
-                validate: function (value) {
-                    if (isNaN(value)) { return false } else { return true }
+                name: "choice",
+                message: "What is the ID of the item you would you like to purchase? [Quit with Q]",
+                validate: function (val) {
+                    return !isNaN(val) || val.toLowerCase() === "q";
                 }
-            }, {
-                name: "quantity",
-                type: "input",
-                message: "How many would you like to purchase?"
             }
-        ]).then(function (purchase) {
+        ])
+        .then(val => {
+            // Check if the user wants to quit the program
+            checkIfShouldExit(val.choice);
+            const choiceId = parseInt(val.choice);
+            const product = checkInventory(choiceId, inventory);
 
-            connection.query("SELECT * FROM products WHERE item_id=?", purchase.item_id, function (err, res) {
-                for (var i = 0; i < res.length; i++) {
-                    if (purchase.quantity > res[i].stock_quantity) {
-                        console.log("-----------------------------------------------" +
-                            "\nSorry, we don't have that many in stock!" + "\n-----------------------------------------------")
-                    }
-                    else {
-                        console.log("Order Accepted!")
-                    }
-
-                }
-
-                purchase.push(response.item_id)
-                purchase.push(response.quantity)
-
-                checkQuantity(purchase)
-            })
-
-        }
-    )
-
+            // If there is a product with the id the user chose, prompt the customer for a desired quantity
+            if (product) {
+                // Pass the chosen product to promptCustomerForQuantity
+                promptCustomerForQuantity(product);
+            }
+            else {
+                // Otherwise let them know the item is not in the inventory, re-run loadProducts
+                console.log("\nThat item is not in the inventory.");
+                loadProducts();
+            }
+        });
 }
-// function checkQuantity(purchase) {
-//                 var stockQuantity = res[i].stock_quantity;
 
-//                 if (purchase[1] > stockQuantity) {
-//                     console.log("Insufficient Quantity!");
+const checkInventory = (choiceId, inventory) => {
+    for (var i = 0; i < inventory.length; i++) {
+        if (inventory[i].item_id === choiceId) {
+            return inventory[i];
+        }
+    }
+    // otherwise return null
+    return null;
 
-//                     shop(itemsArr);
-//                 } else {
+    const item = inventory.filter(item => item.item_id === choiceID);
+    return item.length > 0 ? item[0] : null;
+}
 
-//                 }
-//             }
+const makePurchase = (product, quantity) => {
+    connection.query(
+        "UPDATE products SET stock_quantity = stock_quantity - ? WHERE item_id = ?",
+        [quantity, product.item_id],
+        function (err, res) {
+            // Let the user know the purchase was successful, re-run loadProducts
+            console.log("\nSuccessfully purchased " + quantity + " " + product.product_name + "'s!");
+            loadProducts();
+        }
+    );
+}
+const promptCustomerForQuantity = product => {
+    inquirer
+        .prompt([
+            {
+                type: "input",
+                name: "quantity",
+                message: "How many would you like? [Quit with Q]",
+                validate: val => {
+                    return val > 0 || val.toLowerCase() === "q";
+                }
+            }
+        ])
+        .then(val => {
+            // Check if the user wants to quit the program
+            checkIfShouldExit(val.quantity);
+            const quantity = parseInt(val.quantity);
 
-// remember to add mysql, inquirer
+            // If there isn't enough of the chosen product and quantity, let the user know and re-run loadProducts
+            if (quantity > product.stock_quantity) {
+                console.log("\nInsufficient quantity!");
+                loadProducts();
+            }
+            else {
+                // Otherwise run makePurchase, give it the product information and desired quantity to purchase
+                makePurchase(product, quantity);
+            }
+        });
+}
+
+
+const checkIfShouldExit = choice => {
+    if (choice.toLowerCase() === "q") {
+        console.log(`Don't let the screen door hit you. `);
+        process.exit(0);
+    }
+}
+
+
